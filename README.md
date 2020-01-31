@@ -1,4 +1,4 @@
-# Sample plugin to demonstrate notifications
+# Sample plugin to demonstrate error reporting
 
-This repository is demonstrating notifications. It's discussed at [plugin-dev.com](https://www.plugin-dev.com/).
+This repository is demonstrating error reporting. There's a corresponding article at [plugin-dev.com](https://www.plugin-dev.com/).
 

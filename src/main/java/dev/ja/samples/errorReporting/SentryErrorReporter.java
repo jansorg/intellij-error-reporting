@@ -6,11 +6,13 @@ import com.intellij.ide.DataManager;
 import com.intellij.ide.plugins.IdeaPluginDescriptor;
 import com.intellij.idea.IdeaLogger;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
+import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.ErrorReportSubmitter;
 import com.intellij.openapi.diagnostic.IdeaLoggingEvent;
 import com.intellij.openapi.diagnostic.SubmittedReportInfo;
-import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.openapi.progress.ProgressIndicator;
+import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.util.Consumer;
@@ -72,50 +74,54 @@ public class SentryErrorReporter extends ErrorReportSubmitter {
                           @NotNull Component parentComponent,
                           @NotNull Consumer<SubmittedReportInfo> consumer) {
 
-        Project project = CommonDataKeys.PROJECT.getData(DataManager.getInstance().getDataContext(parentComponent));
+        DataContext context = DataManager.getInstance().getDataContext(parentComponent);
+        Project project = CommonDataKeys.PROJECT.getData(context);
 
-        ProgressManager.getInstance().runProcessWithProgressSynchronously(() -> {
-            EventBuilder event = new EventBuilder();
-            event.withLevel(Event.Level.ERROR);
-            if (getPluginDescriptor() instanceof IdeaPluginDescriptor) {
-                event.withRelease(((IdeaPluginDescriptor) getPluginDescriptor()).getVersion());
-            }
-            // set server name to empty to avoid tracking personal data
-            event.withServerName("");
-
-            // now, attach all exceptions to the message
-            Deque<SentryException> errors = new ArrayDeque<>(events.length);
-            for (IdeaLoggingEvent ideaEvent : events) {
-                // this is the tricky part
-                // ideaEvent.throwable is a com.intellij.diagnostic.IdeaReportingEvent.TextBasedThrowable
-                // This is a wrapper and is only providing the original stacktrace via 'printStackTrace(...)',
-                // but not via 'getStackTrace()'.
-                //
-                // Sentry accesses Throwable.getStackTrace(),
-                // So, we workaround this by retrieving the original exception from the data property
-                if (ideaEvent instanceof IdeaReportingEvent && ideaEvent.getData() instanceof AbstractMessage) {
-                    Throwable ex = ((AbstractMessage) ideaEvent.getData()).getThrowable();
-                    errors.add(new SentryException(ex, ex.getStackTrace()));
-                } else {
-                    // ignoring this ideaEvent, you might not want to do this
+        new Task.Backgroundable(project, "Sending Error Report") {
+            @Override
+            public void run(@NotNull ProgressIndicator indicator) {
+                EventBuilder event = new EventBuilder();
+                event.withLevel(Event.Level.ERROR);
+                if (getPluginDescriptor() instanceof IdeaPluginDescriptor) {
+                    event.withRelease(((IdeaPluginDescriptor) getPluginDescriptor()).getVersion());
                 }
+                // set server name to empty to avoid tracking personal data
+                event.withServerName("");
+
+                // now, attach all exceptions to the message
+                Deque<SentryException> errors = new ArrayDeque<>(events.length);
+                for (IdeaLoggingEvent ideaEvent : events) {
+                    // this is the tricky part
+                    // ideaEvent.throwable is a com.intellij.diagnostic.IdeaReportingEvent.TextBasedThrowable
+                    // This is a wrapper and is only providing the original stacktrace via 'printStackTrace(...)',
+                    // but not via 'getStackTrace()'.
+                    //
+                    // Sentry accesses Throwable.getStackTrace(),
+                    // So, we workaround this by retrieving the original exception from the data property
+                    if (ideaEvent instanceof IdeaReportingEvent && ideaEvent.getData() instanceof AbstractMessage) {
+                        Throwable ex = ((AbstractMessage) ideaEvent.getData()).getThrowable();
+                        errors.add(new SentryException(ex, ex.getStackTrace()));
+                    } else {
+                        // ignoring this ideaEvent, you might not want to do this
+                    }
+                }
+                event.withSentryInterface(new ExceptionInterface(errors));
+                // might be useful to debug the exception
+                event.withExtra("last_action", IdeaLogger.ourLastActionId);
+
+                // by default, Sentry is sending async in a background thread
+                SentryClient sentry = SentryDemo.getSentryClient();
+                sentry.sendEvent(event);
+
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    // we're a bit lazy here.
+                    // Alternatively, we could add a listener to the sentry client
+                    // to be notified if the message was successfully send
+                    Messages.showInfoMessage(parentComponent, "Thank you for submitting your report!", "Error Report");
+                    consumer.consume(new SubmittedReportInfo(SubmittedReportInfo.SubmissionStatus.NEW_ISSUE));
+                });
             }
-            event.withSentryInterface(new ExceptionInterface(errors));
-            // might be useful to debug the exception
-            event.withExtra("last_action", IdeaLogger.ourLastActionId);
-
-            // by default, Sentry is sending async in a background thread
-            SentryClient sentry = SentryDemo.getSentryClient();
-            sentry.sendEvent(event);
-
-            ApplicationManager.getApplication().invokeLater(() -> {
-                // we're a bit lazy here.
-                // Alternatively, we could add a listener to the sentry client
-                // to be notified if the message was successfully send
-                Messages.showInfoMessage(parentComponent, "Thank you for submitting your report!", "Error Report");
-                consumer.consume(new SubmittedReportInfo(SubmittedReportInfo.SubmissionStatus.NEW_ISSUE));
-            });
-        }, "Sending Error to Sentry", false, project);
+        }.queue();
         return true;
     }
 }
