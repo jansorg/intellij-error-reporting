@@ -1,0 +1,42 @@
+plugins {
+    id "org.jetbrains.intellij" version "0.4.16"
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compile('io.sentry:sentry:1.7.27') {
+        // we need to exclude the slf4j transitive dependency
+        // IntelliJ already bundles it and will report a classloader
+        // problem if this isn't excluded
+        exclude group: 'org.slf4j'
+    }
+}
+
+version = '0.1.0'
+
+allprojects {
+    apply plugin: 'java'
+    sourceCompatibility = '1.8'
+    targetCompatibility = '1.8'
+    tasks.withType(JavaCompile) { options.encoding = 'UTF-8' }
+
+    apply plugin: 'org.jetbrains.intellij'
+    intellij {
+        version 'IC-2019.3.2'
+        updateSinceUntilBuild false
+        pluginName 'intellij-error-reporting'
+        // could be disabled for CI
+        downloadSources true
+    }
+
+    // uncomment, if you don't need searchable options
+    buildSearchableOptions.enabled = false
+
+    runIde {
+        systemProperties.put("sun.java2d.renderer", "sun.java2d.marlin.MarlinRenderingEngine")
+        systemProperties.put("awt.useSystemAAFontSettings", "lcd")
+    }
+}

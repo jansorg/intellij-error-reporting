@@ -1,0 +1,23 @@
+<idea-plugin>
+    <id>dev.j-a.samples.intellij-errorreporting</id>
+    <name>plugin-dev.com: IntelliJ Error Reporting</name>
+    <version>0.1.0</version>
+    <vendor email="mail@plugin-dev.com" url="https://www.plugin-dev.com">Joachim Ansorg</vendor>
+
+    <description><![CDATA[Sample plugin to demonstrate how to implement an error reporter]]></description>
+
+    <change-notes><![CDATA[]]></change-notes>
+
+    <!-- this is 2019.3 -->
+    <idea-version since-build="193.5233.102" until-build="201.*"/>
+
+    <depends>com.intellij.modules.lang</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <errorHandler implementation="dev.ja.samples.errorReporting.SentryErrorReporter"/>
+    </extensions>
+
+    <actions>
+        <action class="dev.ja.samples.errorReporting.TriggerErrorAction"/>
+    </actions>
+</idea-plugin>
